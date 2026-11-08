@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>録音して、フーリエ解析</title>
+  <meta name="description" content="マイクで録音した音（または音声ファイル）を、フーリエ解析して、どんな高さの音がどれくらい混ざっているかをグラフにするウェブアプリです。">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23ff6f91'/%3E%3Cpath d='M12 50V34M22 50V18M32 50V28M42 50V10M52 50V38' stroke='white' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <a class="back" href="https://onasu-susu.github.io/">← マイサイトへ戻る</a>
+    <h1>録音して、フーリエ解析</h1>
+    <p class="lead">音を録音すると、どんな高さの音（周波数）が、どれくらい混ざっているかを調べて、グラフにします。</p>
+    <p class="note">録音した音は、このページの中だけで処理します。どこにも送りません。</p>
+
+    <section class="panel" aria-labelledby="h-rec">
+      <h2 id="h-rec">① 録音する</h2>
+      <div class="row">
+        <button type="button" id="rec" class="big">● 録音</button>
+        <button type="button" id="play" class="pill" disabled>▶ 再生</button>
+        <button type="button" id="save" class="pill" disabled>WAV で保存</button>
+        <label class="pill file">音声ファイルを開く<input id="file" type="file" accept="audio/*"></label>
+      </div>
+      <div class="meter" aria-hidden="true"><i id="level"></i></div>
+      <p class="readout" id="status" aria-live="polite">マイクで録音するか、音声ファイルを開いてください。</p>
+      <p class="msg" id="msg" role="status" aria-live="polite" hidden></p>
+      <p class="note">録音は最長 60 秒です。ノイズを消す機能や音量の自動調整は、解析のじゃまになるので切ってあります。</p>
+    </section>
+
+    <section class="panel" aria-labelledby="h-wave">
+      <h2 id="h-wave">② 波形</h2>
+      <canvas id="wave" width="640" height="170" role="img" aria-label="録音した音の波形"></canvas>
+      <p class="note">波形をクリック（またはなぞる）と、そこを解析します。うすい帯が、解析している範囲です。</p>
+      <h3 class="sub">解析している位置の拡大</h3>
+      <canvas id="zoom" width="640" height="150" role="img" aria-label="解析している位置の波形の拡大"></canvas>
+      <p class="note">基音の 5 周期ぶんです（基音が見つからないときは 20 ミリ秒ぶん）。点線は、基音の 1 周期ごとの区切りです。</p>
+    </section>
+
+    <section class="panel" aria-labelledby="h-spec">
+      <h2 id="h-spec">③ スペクトル（どの高さの音がどれだけ混ざっているか）</h2>
+      <div class="controls">
+        <label>窓の長さ<select id="fft"></select></label>
+        <label>周波数の範囲
+          <select id="fmax">
+            <option value="1000">〜 1 kHz</option>
+            <option value="2000">〜 2 kHz</option>
+            <option value="5000" selected>〜 5 kHz</option>
+            <option value="10000">〜 10 kHz</option>
+            <option value="0">全部</option>
+          </select>
+        </label>
+        <label>周波数の軸
+          <select id="fscale"><option value="lin">直線</option><option value="log">対数</option></select>
+        </label>
+        <label>縦軸
+          <select id="yscale"><option value="db">dB</option><option value="lin">そのままの振幅</option></select>
+        </label>
+      </div>
+      <canvas id="spec" width="640" height="270" role="img" aria-label="スペクトル"></canvas>
+      <p class="cursor" id="cursor" aria-live="off">グラフの上にカーソルを置く（スマホはなぞる）と、その周波数と強さが出ます。</p>
+      <div id="result" class="result"></div>
+      <details class="help">
+        <summary>グラフの見方</summary>
+        <ul>
+          <li>どんな音も、いろいろな高さの正弦波（きれいな「ピーッ」という音）の足し算で表せます。それぞれがどれくらい入っているかを調べるのが、フーリエ解析です。</li>
+          <li>横軸は周波数（音の高さ、Hz）、縦軸は強さです。山が高いところの音が強く混ざっています。</li>
+          <li>楽器や声の音は、基音（いちばん低い山）と、その 2 倍・3 倍…の高さの「倍音」がならびます。倍音の混ざり方で、音色が決まります。</li>
+          <li>dB は強さの対数の目盛りです。満点の大きさの正弦波が 0 dB、半分の大きさは約 −6 dB、10 分の 1 は −20 dB です。</li>
+          <li>窓を長くすると、周波数は細かく分かれますが、時間のくわしさは粗くなります。</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="panel" aria-labelledby="h-gram">
+      <h2 id="h-gram">④ スペクトログラム（時間ごとの変化）</h2>
+      <canvas id="gram" width="640" height="240" role="img" aria-label="スペクトログラム"></canvas>
+      <p class="note">横が時間、縦が周波数、色が強さ（明るいほど強い）です。クリックで解析する位置を選べます。</p>
+    </section>
+
+    <section class="panel" id="coefPanel" aria-labelledby="h-coef" hidden>
+      <h2 id="h-coef">⑤ フーリエ級数の係数（基音の周期で）</h2>
+      <p class="note first" id="coefNote"></p>
+      <div class="table-wrap"><table id="coefTable"></table></div>
+      <p class="note">時間の原点は、解析に使った区間の左はしです。位置を動かすと、aₖ・bₖ の値は位相の分だけ変わりますが、振幅 √(aₖ²+bₖ²) は変わりません。</p>
+      <a class="big link" id="toFourier" href="https://onasu-susu.github.io/fourier/">▶ この係数から、音をつくり直して聴く</a>
+    </section>
+  </main>
+
+  <footer>© 2026 Akito Yoshii</footer>
+
+  <script src="dsp.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
